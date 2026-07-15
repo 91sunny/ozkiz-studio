@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OzKiz Studio</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f0f4ff;
+  color: #1a1a2e;
+  min-height: 100vh;
+}
+header {
+  background: #fff;
+  border-bottom: 1px solid #e8ecf5;
+  padding: 0 24px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.header-left { display: flex; align-items: center; gap: 10px; }
+.logo { font-size: 22px; }
+.site-name { font-size: 16px; font-weight: 700; color: #1a1a2e; }
+.header-right { display: flex; align-items: center; gap: 12px; font-size: 13px; color: #666; }
+.btn-logout {
+  padding: 5px 12px;
+  background: #f0f4ff;
+  border: 1px solid #c8d4f0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #444;
+  transition: background .15s;
+}
+.btn-logout:hover { background: #e2e8ff; }
+
+main { max-width: 900px; margin: 0 auto; padding: 28px 20px 60px; display: flex; flex-direction: column; gap: 20px; }
+
+.card {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.06);
+  padding: 24px;
+}
+.card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-title .badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: #e8f0fe;
+  color: #3b7cff;
+  font-weight: 600;
+}
+
+/* ── 1. 사진 업로드 ── */
+.drop-zone {
+  border: 2px dashed #c8d4f0;
+  border-radius: 10px;
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  background: #fafbff;
+  position: relative;
+}
+.drop-zone:hover, .drop-zone.drag { border-color: #3b7cff; background: #f0f4ff; }
+.drop-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.drop-icon { font-size: 32px; margin-bottom: 8px; }
+.drop-text { font-size: 14px; color: #555; }
+.drop-text b { color: #3b7cff; }
+
+#preview-wrap { margin-top: 14px; display: none; }
+#preview-img { max-height: 220px; border-radius: 8px; border: 1px solid #e0e8ff; }
+
+.btn {
+  padding: 9px 18px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, opacity .15s;
+}
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-blue { background: #3b7cff; color: #fff; }
+.btn-blue:hover:not(:disabled) { background: #2563eb; }
+.btn-gray { background: #eef1f8; color: #444; }
+.btn-gray:hover:not(:disabled) { background: #dde3f0; }
+.btn-green { background: #22c55e; color: #fff; }
+.btn-green:hover:not(:disabled) { background: #16a34a; }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+
+/* ── 2. AI 상품명 추천 ── */
+#ai-result { display: none; }
+.desc-box {
+  padding: 10px 14px;
+  background: #f4f6ff;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #444;
+  margin-bottom: 14px;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.chip {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 2px solid #c8d4f0;
+  background: #f8faff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  user-select: none;
+}
+.chip:hover { border-color: #3b7cff; background: #eef2ff; }
+.chip.selected { border-color: #3b7cff; background: #3b7cff; color: #fff; }
+
+/* ── 3. 노션 제품명 변경 ── */
+.search-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.search-row input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1.5px solid #c8d4f0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.search-row input:focus { outline: none; border-color: #3b7cff; }
+.search-results { max-height: 200px; overflow-y: auto; border: 1px solid #e0e8ff; border-radius: 8px; display: none; }
+.search-item {
+  padding: 9px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid #f0f4ff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.search-item:last-child { border-bottom: none; }
+.search-item:hover { background: #f0f4ff; }
+.search-item .status { font-size: 11px; color: #888; }
+.selected-product {
+  padding: 10px 14px;
+  background: #f0f4ff;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #2a2a50;
+  margin-bottom: 10px;
+  display: none;
+}
+.new-name-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.new-name-row input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1.5px solid #c8d4f0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.new-name-row input:focus { outline: none; border-color: #3b7cff; }
+
+/* ── 4. 제품컷 변환 ── */
+.bg-options { display: flex; gap: 8px; margin-bottom: 14px; }
+.bg-opt {
+  flex: 1;
+  padding: 8px 12px;
+  border: 2px solid #c8d4f0;
+  border-radius: 8px;
+  background: #f8faff;
+  cursor: pointer;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all .15s;
+}
+.bg-opt.active { border-color: #3b7cff; background: #eef2ff; color: #3b7cff; }
+
+#shot-drop {
+  border: 2px dashed #c8d4f0;
+  border-radius: 10px;
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  background: #fafbff;
+  position: relative;
+  margin-bottom: 14px;
+  transition: border-color .2s, background .2s;
+}
+#shot-drop:hover, #shot-drop.drag { border-color: #3b7cff; background: #f0f4ff; }
+#shot-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+#shot-preview { display: none; margin-top: 10px; }
+#shot-preview img { max-height: 180px; border-radius: 8px; border: 1px solid #e0e8ff; }
+#shot-result { display: none; margin-top: 14px; text-align: center; }
+#shot-result img { max-height: 220px; border-radius: 8px; border: 1px solid #e0e8ff; }
+#shot-result .dl-btn { margin-top: 10px; display: inline-block; }
+
+/* ── Toast ── */
+#toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: #1a1a2e;
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all .25s;
+  z-index: 9999;
+  white-space: nowrap;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.warn { background: #d97706; }
+#toast.err { background: #dc2626; }
+#toast.ok { background: #16a34a; }
+
+/* ── loading spinner ── */
+.spin {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <span class="logo">✂️</span>
+    <span class="site-name">OzKiz Studio</span>
+  </div>
+  <div class="header-right">
+    <span id="user-name"></span>
+    <button class="btn-logout" onclick="logout()">로그아웃</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- Card 1: 사진 업로드 + AI 분석 -->
+  <div class="card">
+    <div class="card-title">📸 상품 사진 업로드 <span class="badge">AI 분석</span></div>
+    <div class="drop-zone" id="drop-zone"
+      ondragover="ev.preventDefault();this.classList.add('drag')"
+      ondragleave="this.classList.remove('drag')"
+      ondrop="onDrop(event)">
+      <input type="file" accept="image/*" onchange="onFileSelect(this.files[0])">
+      <div class="drop-icon">🖼️</div>
+      <div class="drop-text">이미지를 드래그하거나 <b>클릭해서 선택</b></div>
+      <div class="drop-text" style="color:#999;font-size:12px;margin-top:4px;">JPG, PNG, WEBP 지원</div>
+    </div>
+    <div id="preview-wrap" style="text-align:center;">
+      <img id="preview-img" src="" alt="미리보기">
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;">
+        <button class="btn btn-blue" id="analyze-btn" onclick="analyzeImage()">🤖 AI 상품명 분석</button>
+        <button class="btn btn-gray btn-sm" onclick="clearImage()">✕ 이미지 제거</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 2: AI 상품명 추천 결과 -->
+  <div class="card" id="ai-result">
+    <div class="card-title">💡 AI 상품명 추천</div>
+    <div class="desc-box" id="ai-desc"></div>
+    <div style="font-size:12px;color:#888;margin-bottom:8px;">추천 상품명 중 하나를 선택하세요</div>
+    <div class="chips" id="chips"></div>
+    <div id="selected-name-display" style="display:none;margin-bottom:12px;">
+      <div style="font-size:12px;color:#666;margin-bottom:4px;">선택한 상품명</div>
+      <div style="font-size:16px;font-weight:700;color:#3b7cff;" id="selected-name-text"></div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-gray btn-sm" onclick="reanalyze()">🔄 다시 분석</button>
+      <button class="btn btn-blue btn-sm" id="apply-to-notion-btn" onclick="applyToNotion()" style="display:none;">→ 노션 적용</button>
+    </div>
+  </div>
+
+  <!-- Card 3: 노션 제품명 변경 -->
+  <div class="card">
+    <div class="card-title">📝 노션 제품명 변경</div>
+    <div class="search-row">
+      <input type="text" id="notion-search" placeholder="제품명으로 검색..." oninput="searchNotion()" autocomplete="off">
+      <button class="btn btn-gray btn-sm" onclick="clearNotionSearch()">✕</button>
+    </div>
+    <div class="search-results" id="search-results"></div>
+    <div class="selected-product" id="selected-product"></div>
+    <div class="new-name-row" id="new-name-row" style="display:none;">
+      <input type="text" id="new-name-input" placeholder="새 제품명 입력">
+      <button class="btn btn-blue" id="update-btn" onclick="updateNotionName()">변경</button>
+    </div>
+  </div>
+
+  <!-- Card 4: 제품컷 변환 -->
+  <div class="card">
+    <div class="card-title">🖼️ 제품컷 변환 <span class="badge">AI 배경 제거</span></div>
+    <div style="font-size:13px;color:#666;margin-bottom:12px;">배경을 자동으로 제거하고 제품컷을 만들어드립니다</div>
+    <div style="font-size:12px;color:#888;margin-bottom:6px;">배경 색상</div>
+    <div class="bg-options">
+      <div class="bg-opt active" data-bg="white" onclick="selectBg(this)">⬜ 흰 배경</div>
+      <div class="bg-opt" data-bg="gray" onclick="selectBg(this)">🔲 회색 배경</div>
+      <div class="bg-opt" data-bg="transparent" onclick="selectBg(this)">🔳 투명 (PNG)</div>
+    </div>
+    <div id="shot-drop" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="onShotDrop(event)">
+      <input type="file" accept="image/*" onchange="onShotSelect(this.files[0])">
+      <div style="font-size:28px;margin-bottom:6px;">📷</div>
+      <div style="font-size:14px;color:#666;">이미지를 드래그하거나 <b style="color:#3b7cff">클릭해서 선택</b></div>
+    </div>
+    <div id="shot-preview">
+      <img id="shot-preview-img" src="" alt="">
+      <div style="margin-top:8px;font-size:12px;color:#888;" id="shot-fname"></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+      <button class="btn btn-blue" id="shot-btn" onclick="convertProductShot()" disabled>✨ 배경 제거</button>
+      <span id="shot-status" style="font-size:12px;color:#888;"></span>
+    </div>
+    <div id="shot-result">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px;">변환 완료!</div>
+      <img id="shot-result-img" src="" alt="제품컷">
+      <div><a id="shot-dl-link" class="btn btn-green btn-sm dl-btn" download>💾 다운로드</a></div>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+// ─── 상태 ─────────────────────────────────────────────────────────────────────
+let selectedFile = null;
+let selectedChip = null;
+let selectedProduct = null; // {page_id, name}
+let shotFile = null;
+let bgColor = 'white';
+
+// ─── 초기화 ───────────────────────────────────────────────────────────────────
+(async () => {
+  try {
+    const r = await fetch('/api/me');
+    const d = await r.json();
+    if (d.username) document.getElementById('user-name').textContent = d.username;
+  } catch(e) {}
+})();
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+function toast(msg, type='ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = ''; }, 2800);
+}
+
+// ─── 로그아웃 ─────────────────────────────────────────────────────────────────
+async function logout() {
+  await fetch('/api/logout', {method:'POST'});
+  location.href = '/login';
+}
+
+// ─── 1. 이미지 업로드 ─────────────────────────────────────────────────────────
+function onDrop(ev) {
+  ev.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag');
+  const f = ev.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) onFileSelect(f);
+}
+
+function onFileSelect(f) {
+  if (!f) return;
+  selectedFile = f;
+  const url = URL.createObjectURL(f);
+  document.getElementById('preview-img').src = url;
+  document.getElementById('preview-wrap').style.display = 'block';
+  document.getElementById('ai-result').style.display = 'none';
+}
+
+function clearImage() {
+  selectedFile = null;
+  document.getElementById('preview-wrap').style.display = 'none';
+  document.getElementById('ai-result').style.display = 'none';
+  document.getElementById('preview-img').src = '';
+}
+
+// ─── 2. AI 분석 ───────────────────────────────────────────────────────────────
+async function analyzeImage() {
+  if (!selectedFile) { toast('이미지를 먼저 선택해주세요', 'warn'); return; }
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> 분석 중...';
+  try {
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    const r = await fetch('/api/analyze', {method:'POST', body:fd});
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || '분석 실패'); }
+    const d = await r.json();
+    showAiResult(d);
+  } catch(e) {
+    toast('AI 분석 실패: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🤖 AI 상품명 분석';
+  }
+}
+
+function showAiResult(d) {
+  document.getElementById('ai-result').style.display = 'block';
+  document.getElementById('ai-desc').textContent = d.description || '';
+  const chips = document.getElementById('chips');
+  chips.innerHTML = '';
+  selectedChip = null;
+  document.getElementById('selected-name-display').style.display = 'none';
+  document.getElementById('apply-to-notion-btn').style.display = 'none';
+  (d.suggested_names || []).forEach(name => {
+    const el = document.createElement('div');
+    el.className = 'chip';
+    el.textContent = name;
+    el.onclick = () => selectChip(el, name);
+    chips.appendChild(el);
+  });
+  document.getElementById('ai-result').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function selectChip(el, name) {
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedChip = name;
+  document.getElementById('selected-name-text').textContent = name;
+  document.getElementById('selected-name-display').style.display = 'block';
+  document.getElementById('apply-to-notion-btn').style.display = 'inline-block';
+  // 노션 새 이름 자동 입력
+  document.getElementById('new-name-input').value = name;
+}
+
+function reanalyze() { analyzeImage(); }
+
+function applyToNotion() {
+  if (!selectedChip) return;
+  document.getElementById('new-name-input').value = selectedChip;
+  document.querySelector('.card:nth-child(3)').scrollIntoView({behavior:'smooth'});
+  document.getElementById('new-name-input').focus();
+}
+
+// ─── 3. 노션 제품명 검색 / 변경 ───────────────────────────────────────────────
+let _searchTimer = null;
+function searchNotion() {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(async () => {
+    const q = document.getElementById('notion-search').value.trim();
+    if (!q) { document.getElementById('search-results').style.display = 'none'; return; }
+    try {
+      const r = await fetch('/api/notion-search?q=' + encodeURIComponent(q));
+      const d = await r.json();
+      const list = document.getElementById('search-results');
+      if (!d.results || !d.results.length) {
+        list.innerHTML = '<div class="search-item" style="color:#aaa;">결과 없음</div>';
+      } else {
+        list.innerHTML = d.results.map(p =>
+          `<div class="search-item" onclick="selectProduct('${p.page_id}','${escHtml(p.name)}','${escHtml(p.status || '')}')">
+            <span>${escHtml(p.name)}</span>
+            <span class="status">${escHtml(p.status || '')}</span>
+          </div>`
+        ).join('');
+      }
+      list.style.display = 'block';
+    } catch(e) {}
+  }, 300);
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+function selectProduct(page_id, name, status) {
+  selectedProduct = {page_id, name};
+  document.getElementById('search-results').style.display = 'none';
+  document.getElementById('notion-search').value = name;
+  const el = document.getElementById('selected-product');
+  el.textContent = `선택됨: ${name}  (${status})`;
+  el.style.display = 'block';
+  document.getElementById('new-name-row').style.display = 'flex';
+  document.getElementById('new-name-input').focus();
+}
+
+function clearNotionSearch() {
+  selectedProduct = null;
+  document.getElementById('notion-search').value = '';
+  document.getElementById('search-results').style.display = 'none';
+  document.getElementById('selected-product').style.display = 'none';
+  document.getElementById('new-name-row').style.display = 'none';
+}
+
+async function updateNotionName() {
+  if (!selectedProduct) { toast('제품을 먼저 선택해주세요', 'warn'); return; }
+  const newName = document.getElementById('new-name-input').value.trim();
+  if (!newName) { toast('새 제품명을 입력해주세요', 'warn'); return; }
+  const btn = document.getElementById('update-btn');
+  btn.disabled = true; btn.textContent = '변경 중...';
+  try {
+    const r = await fetch('/api/update-notion-name', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({page_id: selectedProduct.page_id, new_name: newName}),
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail); }
+    toast(`"${newName}" 으로 변경되었습니다`, 'ok');
+    clearNotionSearch();
+    document.getElementById('new-name-input').value = '';
+  } catch(e) {
+    toast('변경 실패: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '변경';
+  }
+}
+
+// ─── 4. 제품컷 변환 ───────────────────────────────────────────────────────────
+function selectBg(el) {
+  document.querySelectorAll('.bg-opt').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  bgColor = el.dataset.bg;
+}
+
+function onShotDrop(ev) {
+  ev.preventDefault();
+  document.getElementById('shot-drop').classList.remove('drag');
+  const f = ev.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) onShotSelect(f);
+}
+
+function onShotSelect(f) {
+  if (!f) return;
+  shotFile = f;
+  document.getElementById('shot-preview-img').src = URL.createObjectURL(f);
+  document.getElementById('shot-fname').textContent = f.name;
+  document.getElementById('shot-preview').style.display = 'block';
+  document.getElementById('shot-result').style.display = 'none';
+  document.getElementById('shot-btn').disabled = false;
+}
+
+async function convertProductShot() {
+  if (!shotFile) { toast('이미지를 먼저 선택해주세요', 'warn'); return; }
+  const btn = document.getElementById('shot-btn');
+  const status = document.getElementById('shot-status');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> 처리 중...';
+  status.textContent = '배경 제거 중... (10~30초 소요)';
+  document.getElementById('shot-result').style.display = 'none';
+  try {
+    const fd = new FormData();
+    fd.append('file', shotFile);
+    fd.append('bg_color', bgColor);
+    const r = await fetch('/api/product-shot', {method:'POST', body:fd});
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || '처리 실패'); }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    document.getElementById('shot-result-img').src = url;
+    const ext = bgColor === 'transparent' ? 'png' : 'jpg';
+    document.getElementById('shot-dl-link').href = url;
+    document.getElementById('shot-dl-link').download = `product_shot.${ext}`;
+    document.getElementById('shot-result').style.display = 'block';
+    status.textContent = '';
+    toast('변환 완료!', 'ok');
+  } catch(e) {
+    toast('변환 실패: ' + e.message, 'err');
+    status.textContent = '';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ 배경 제거';
+  }
+}
+</script>
+</body>
+</html>

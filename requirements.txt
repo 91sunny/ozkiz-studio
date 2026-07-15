@@ -1,0 +1,10 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+anthropic>=0.40.0
+google-genai>=1.5.0
+notion-client==2.2.1
+httpx>=0.25.0
+python-dotenv==1.0.1
+rembg>=2.0.50
+Pillow>=10.0.0
