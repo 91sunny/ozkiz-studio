@@ -248,6 +248,8 @@ async def analyze_image(file: UploadFile = File(...), email: str = Depends(_requ
         result["existing_count"] = len(existing_names)
         return result
     except Exception as e:
+        import traceback
+        print(f"[analyze error] {traceback.format_exc()}")
         raise HTTPException(500, f"AI 분석 실패: {str(e)}")
 
 # ─── 노션 제품명 검색 ─────────────────────────────────────────────────────────
