@@ -42,15 +42,11 @@ if GEMINI_KEY:
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_KEY)
-        gemini_client = genai.GenerativeModel("gemini-2.0-flash")
+        gemini_client = genai.GenerativeModel("gemini-1.5-flash")
         ai_available = True
-    except Exception:
-        try:
-            from google import genai as gai
-            gemini_client = gai.Client(api_key=GEMINI_KEY)
-            ai_available = True
-        except Exception:
-            pass
+        print("[Gemini] google-generativeai 초기화 완료")
+    except Exception as e:
+        print(f"[Gemini] 초기화 실패: {e}")
 
 # ─── 세션 (SQLite) ─────────────────────────────────────────────────────────────
 _SESSION_DB  = "studio_sessions.db"
@@ -243,22 +239,9 @@ async def analyze_image(file: UploadFile = File(...), email: str = Depends(_requ
     try:
         import base64, json, re
         b64 = base64.b64encode(img_bytes).decode()
-        if hasattr(gemini_client, 'models'):
-            # google-genai SDK
-            from google.genai import types as gtypes
-            resp = gemini_client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=[
-                    gtypes.Part.from_bytes(data=img_bytes, mime_type=mime),
-                    gtypes.Part.from_text(prompt),
-                ]
-            )
-            text = resp.text
-        else:
-            # google-generativeai SDK
-            import google.generativeai as genai
-            resp = gemini_client.generate_content([{"mime_type": mime, "data": b64}, prompt])
-            text = resp.text
+        # google-generativeai SDK
+        resp = gemini_client.generate_content([{"mime_type": mime, "data": b64}, prompt])
+        text = resp.text
 
         m = re.search(r'\{.*\}', text, re.DOTALL)
         result = json.loads(m.group()) if m else {"suggested_names": [], "category": "", "description": ""}
