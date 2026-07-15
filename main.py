@@ -1,8 +1,11 @@
 import os
 import io
 import time
+import hmac
+import json
+import base64
+import hashlib
 import secrets
-import sqlite3 as _sqlite3
 import httpx
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Cookie
 from fastapi.staticfiles import StaticFiles
@@ -48,31 +51,31 @@ if GEMINI_KEY:
     except Exception as e:
         print(f"[Gemini] 초기화 실패: {e}")
 
-# ─── 세션 (SQLite) ─────────────────────────────────────────────────────────────
-_SESSION_DB  = "studio_sessions.db"
-_OAUTH_STATES: dict = {}
+# ─── 세션 (HMAC 서명 쿠키, 재배포해도 유지) ──────────────────────────────────
+SESSION_SECRET = os.getenv("SESSION_SECRET", "default-change-me-in-env")
 
-def _db():
-    con = _sqlite3.connect(_SESSION_DB)
-    con.execute("CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, email TEXT)")
-    con.commit()
-    return con
+def _make_token(email: str) -> str:
+    payload = base64.urlsafe_b64encode(
+        json.dumps({"email": email, "exp": time.time() + 86400 * 30}).encode()
+    ).decode()
+    sig = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
 
-def _session_get(token: str):
-    with _db() as con:
-        row = con.execute("SELECT email FROM sessions WHERE token=?", (token,)).fetchone()
-    return row[0] if row else None
-
-def _session_set(token: str, email: str):
-    with _db() as con:
-        con.execute("INSERT OR REPLACE INTO sessions(token,email) VALUES(?,?)", (token, email))
-
-def _session_del(token: str):
-    with _db() as con:
-        con.execute("DELETE FROM sessions WHERE token=?", (token,))
+def _verify_token(token: str):
+    try:
+        payload, sig = token.rsplit(".", 1)
+        expected = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return None
+        data = json.loads(base64.urlsafe_b64decode(payload + "=="))
+        if data.get("exp", 0) < time.time():
+            return None
+        return data.get("email")
+    except Exception:
+        return None
 
 def _require_auth(session: str = Cookie(default="")):
-    email = _session_get(session)
+    email = _verify_token(session)
     if not email:
         raise HTTPException(status_code=401, detail="로그인 필요")
     return email
@@ -142,7 +145,7 @@ async def login_page():
 
 @app.get("/")
 async def index(session: str = Cookie(default="")):
-    if not _session_get(session):
+    if not _verify_token(session):
         return RedirectResponse("/login")
     return HTMLResponse((_STATIC / "index.html").read_text(encoding="utf-8"))
 
@@ -184,22 +187,20 @@ async def google_callback(code: str = "", state: str = "", error: str = ""):
     email = data.get("email", "")
     if not email.endswith(f"@{ALLOWED_DOMAIN}"):
         return RedirectResponse("/login?error=domain")
-    token = secrets.token_urlsafe(32)
-    _session_set(token, email)
+    token = _make_token(email)
     resp = RedirectResponse("/")
     resp.set_cookie("session", token, httponly=True, max_age=86400 * 30, samesite="lax")
     return resp
 
 @app.post("/api/logout")
-async def logout(session: str = Cookie(default="")):
-    _session_del(session)
+async def logout():
     resp = RedirectResponse("/login", status_code=302)
     resp.delete_cookie("session")
     return resp
 
 @app.get("/api/me")
 async def me(session: str = Cookie(default="")):
-    email = _session_get(session)
+    email = _verify_token(session)
     if not email:
         return JSONResponse({"username": None})
     return {"username": email.split("@")[0]}
