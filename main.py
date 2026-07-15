@@ -28,7 +28,7 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 ALLOWED_DOMAIN       = "openhan.kr"
 BASE_URL             = os.getenv("BASE_URL", "http://localhost:8001")
 
-GEMINI_KEY       = os.getenv("GEMINI_API_KEY", "")
+ANTHROPIC_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
 NOTION_KEY       = os.getenv("NOTION_API_KEY", "")
 NOTION_DB_ID     = os.getenv("NOTION_DATABASE_ID", "")
 NOTION_NAME_PROP = os.getenv("NOTION_NAME_PROPERTY", "제품명")
@@ -38,17 +38,17 @@ NOTION_HEADERS   = {
     "Content-Type": "application/json",
 } if NOTION_KEY else {}
 
-# ─── Gemini 초기화 ─────────────────────────────────────────────────────────────
+# ─── Claude 초기화 ────────────────────────────────────────────────────────────
 ai_available = False
-gemini_client = None
-if GEMINI_KEY:
+claude_client = None
+if ANTHROPIC_KEY:
     try:
-        from google import genai as _genai
-        gemini_client = _genai.Client(api_key=GEMINI_KEY)
+        import anthropic as _anthropic
+        claude_client = _anthropic.Anthropic(api_key=ANTHROPIC_KEY)
         ai_available = True
-        print("[Gemini] google-genai 초기화 완료")
+        print("[Claude] 초기화 완료")
     except Exception as e:
-        print(f"[Gemini] 초기화 실패: {e}")
+        print(f"[Claude] 초기화 실패: {e}")
 
 # ─── 세션 (HMAC 서명 쿠키, 재배포해도 유지) ──────────────────────────────────
 SESSION_SECRET = os.getenv("SESSION_SECRET", "default-change-me-in-env")
@@ -237,17 +237,20 @@ async def analyze_image(file: UploadFile = File(...), email: str = Depends(_requ
 }}"""
 
     try:
-        import re
-        from google.genai import types as _gt
-        resp = gemini_client.models.generate_content(
-            model="gemini-2.0-flash-lite",
-            contents=[
-                _gt.Part.from_bytes(data=img_bytes, mime_type=mime),
-                _gt.Part.from_text(text=prompt),
-            ],
+        import base64, re
+        b64 = base64.standard_b64encode(img_bytes).decode()
+        msg = claude_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
+                    {"type": "text", "text": prompt},
+                ],
+            }],
         )
-        text = resp.text
-
+        text = msg.content[0].text
         m = re.search(r'\{.*\}', text, re.DOTALL)
         result = json.loads(m.group()) if m else {"suggested_names": [], "category": "", "description": ""}
         result["existing_count"] = len(existing_names)
