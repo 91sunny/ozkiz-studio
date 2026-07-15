@@ -1,13 +1,10 @@
 import os
 import io
 import time
-import hmac
-import json
-import base64
-import hashlib
 import secrets
+import sqlite3 as _sqlite3
 import httpx
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Cookie, Request
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Cookie
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,18 +15,21 @@ load_dotenv()
 app = FastAPI(title="OzKiz Studio")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+import pathlib
+_STATIC = pathlib.Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
+
 # ─── 환경변수 ──────────────────────────────────────────────────────────────────
 GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
-SESSION_SECRET       = os.getenv("SESSION_SECRET", "changeme-set-this-in-env")
 ALLOWED_DOMAIN       = "openhan.kr"
 BASE_URL             = os.getenv("BASE_URL", "http://localhost:8001")
 
-GEMINI_KEY   = os.getenv("GEMINI_API_KEY", "")
-NOTION_KEY   = os.getenv("NOTION_API_KEY", "")
-NOTION_DB_ID = os.getenv("NOTION_DATABASE_ID", "")
+GEMINI_KEY       = os.getenv("GEMINI_API_KEY", "")
+NOTION_KEY       = os.getenv("NOTION_API_KEY", "")
+NOTION_DB_ID     = os.getenv("NOTION_DATABASE_ID", "")
 NOTION_NAME_PROP = os.getenv("NOTION_NAME_PROPERTY", "제품명")
-NOTION_HEADERS = {
+NOTION_HEADERS   = {
     "Authorization": f"Bearer {NOTION_KEY}",
     "Notion-Version": "2022-06-28",
     "Content-Type": "application/json",
@@ -52,44 +52,40 @@ if GEMINI_KEY:
         except Exception:
             pass
 
-# ─── 세션 (HMAC 서명 쿠키, stateless) ────────────────────────────────────────
+# ─── 세션 (SQLite) ─────────────────────────────────────────────────────────────
+_SESSION_DB  = "studio_sessions.db"
 _OAUTH_STATES: dict = {}
 
-def _make_token(email: str) -> str:
-    payload = base64.urlsafe_b64encode(
-        json.dumps({"email": email, "exp": time.time() + 86400 * 30}).encode()
-    ).decode()
-    sig = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
-    return f"{payload}.{sig}"
+def _db():
+    con = _sqlite3.connect(_SESSION_DB)
+    con.execute("CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, email TEXT)")
+    con.commit()
+    return con
 
-def _verify_token(token: str):
-    try:
-        payload, sig = token.rsplit(".", 1)
-        expected = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(sig, expected):
-            return None
-        data = json.loads(base64.urlsafe_b64decode(payload + "=="))
-        if data.get("exp", 0) < time.time():
-            return None
-        return data.get("email")
-    except Exception:
-        return None
+def _session_get(token: str):
+    with _db() as con:
+        row = con.execute("SELECT email FROM sessions WHERE token=?", (token,)).fetchone()
+    return row[0] if row else None
+
+def _session_set(token: str, email: str):
+    with _db() as con:
+        con.execute("INSERT OR REPLACE INTO sessions(token,email) VALUES(?,?)", (token, email))
+
+def _session_del(token: str):
+    with _db() as con:
+        con.execute("DELETE FROM sessions WHERE token=?", (token,))
 
 def _require_auth(session: str = Cookie(default="")):
-    email = _verify_token(session)
+    email = _session_get(session)
     if not email:
         raise HTTPException(status_code=401, detail="로그인 필요")
     return email
 
-# ─── 노션 캐시 (지연 로딩) ────────────────────────────────────────────────────
+# ─── 노션 캐시 ────────────────────────────────────────────────────────────────
 _notion_cache: list = []
-_cache_loaded_at: float = 0
-_CACHE_TTL = 600  # 10분
 
-async def _ensure_notion_cache():
-    global _notion_cache, _cache_loaded_at
-    if _notion_cache and time.time() - _cache_loaded_at < _CACHE_TTL:
-        return
+async def _load_notion_cache():
+    global _notion_cache
     if not NOTION_KEY or not NOTION_DB_ID:
         return
     products = []
@@ -134,15 +130,14 @@ async def _ensure_notion_cache():
                 has_more = data.get("has_more", False)
                 cursor = data.get("next_cursor")
         _notion_cache = products
-        _cache_loaded_at = time.time()
-        print(f"[Notion] {len(products)}개 캐시")
+        print(f"[Notion] {len(products)}개 캐시 완료")
     except Exception as e:
         print(f"[Notion] 캐시 오류: {e}")
 
-# ─── 정적 파일 ────────────────────────────────────────────────────────────────
-import pathlib
-_STATIC = pathlib.Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
+@app.on_event("startup")
+async def startup():
+    import asyncio
+    asyncio.create_task(_load_notion_cache())
 
 # ─── 페이지 ───────────────────────────────────────────────────────────────────
 @app.get("/login")
@@ -151,7 +146,7 @@ async def login_page():
 
 @app.get("/")
 async def index(session: str = Cookie(default="")):
-    if not _verify_token(session):
+    if not _session_get(session):
         return RedirectResponse("/login")
     return HTMLResponse((_STATIC / "index.html").read_text(encoding="utf-8"))
 
@@ -178,6 +173,7 @@ async def google_callback(code: str = "", state: str = "", error: str = ""):
         return RedirectResponse("/login?error=auth_failed")
     del _OAUTH_STATES[state]
     redirect_uri = f"{BASE_URL}/api/auth/callback"
+    import json, base64
     async with httpx.AsyncClient() as client:
         token_res = await client.post("https://oauth2.googleapis.com/token", data={
             "code": code, "client_id": GOOGLE_CLIENT_ID,
@@ -195,20 +191,22 @@ async def google_callback(code: str = "", state: str = "", error: str = ""):
     email = data.get("email", "")
     if not email.endswith(f"@{ALLOWED_DOMAIN}"):
         return RedirectResponse("/login?error=domain")
-    token = _make_token(email)
+    token = secrets.token_urlsafe(32)
+    _session_set(token, email)
     resp = RedirectResponse("/")
     resp.set_cookie("session", token, httponly=True, max_age=86400 * 30, samesite="lax")
     return resp
 
 @app.post("/api/logout")
-async def logout():
+async def logout(session: str = Cookie(default="")):
+    _session_del(session)
     resp = RedirectResponse("/login", status_code=302)
     resp.delete_cookie("session")
     return resp
 
 @app.get("/api/me")
 async def me(session: str = Cookie(default="")):
-    email = _verify_token(session)
+    email = _session_get(session)
     if not email:
         return JSONResponse({"username": None})
     return {"username": email.split("@")[0]}
@@ -223,7 +221,6 @@ async def status():
 async def analyze_image(file: UploadFile = File(...), email: str = Depends(_require_auth)):
     if not ai_available:
         raise HTTPException(400, "AI API 키가 설정되지 않았습니다")
-    await _ensure_notion_cache()
     img_bytes = await file.read()
     mime = file.content_type or "image/jpeg"
     existing_names = [p["name"] for p in _notion_cache]
@@ -247,6 +244,7 @@ async def analyze_image(file: UploadFile = File(...), email: str = Depends(_requ
 }}"""
 
     try:
+        import base64, json, re
         b64 = base64.b64encode(img_bytes).decode()
         if hasattr(gemini_client, 'models'):
             from google.genai import types as gtypes
@@ -260,7 +258,6 @@ async def analyze_image(file: UploadFile = File(...), email: str = Depends(_requ
             resp = gemini_client.generate_content([{"mime_type": mime, "data": b64}, prompt])
             text = resp.text
 
-        import re
         m = re.search(r'\{.*\}', text, re.DOTALL)
         result = json.loads(m.group()) if m else {"suggested_names": [], "category": "", "description": ""}
         result["existing_count"] = len(existing_names)
@@ -271,7 +268,6 @@ async def analyze_image(file: UploadFile = File(...), email: str = Depends(_requ
 # ─── 노션 제품명 검색 ─────────────────────────────────────────────────────────
 @app.get("/api/notion-search")
 async def notion_search(q: str = "", email: str = Depends(_require_auth)):
-    await _ensure_notion_cache()
     if not q:
         return {"results": []}
     q_lower = q.lower()
@@ -287,6 +283,7 @@ async def update_notion_name(body: dict, email: str = Depends(_require_auth)):
         raise HTTPException(400, "page_id와 new_name 필요")
     if not NOTION_KEY:
         raise HTTPException(500, "Notion API 키 없음")
+    import json
     payload = {"properties": {NOTION_NAME_PROP: {"title": [{"text": {"content": new_name}}]}}}
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.patch(
