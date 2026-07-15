@@ -155,23 +155,20 @@ async def index(session: str = Cookie(default="")):
 async def google_auth():
     if not GOOGLE_CLIENT_ID:
         return RedirectResponse("/")
-    state = secrets.token_urlsafe(16)
-    _OAUTH_STATES[state] = True
     redirect_uri = f"{BASE_URL}/api/auth/callback"
     url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
         f"?client_id={GOOGLE_CLIENT_ID}"
         f"&redirect_uri={redirect_uri}"
         f"&response_type=code&scope=openid%20email%20profile"
-        f"&state={state}&hd={ALLOWED_DOMAIN}"
+        f"&hd={ALLOWED_DOMAIN}"
     )
     return RedirectResponse(url)
 
 @app.get("/api/auth/callback")
 async def google_callback(code: str = "", state: str = "", error: str = ""):
-    if error or state not in _OAUTH_STATES:
+    if error or not code:
         return RedirectResponse("/login?error=auth_failed")
-    del _OAUTH_STATES[state]
     redirect_uri = f"{BASE_URL}/api/auth/callback"
     import json, base64
     async with httpx.AsyncClient() as client:
