@@ -240,7 +240,7 @@ async def analyze_image(file: UploadFile = File(...), email: str = Depends(_requ
         import re
         from google.genai import types as _gt
         resp = gemini_client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash-lite",
             contents=[
                 _gt.Part.from_bytes(data=img_bytes, mime_type=mime),
                 _gt.Part.from_text(text=prompt),
