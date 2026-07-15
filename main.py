@@ -43,11 +43,10 @@ ai_available = False
 gemini_client = None
 if GEMINI_KEY:
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_KEY)
-        gemini_client = genai.GenerativeModel("gemini-1.5-flash")
+        from google import genai as _genai
+        gemini_client = _genai.Client(api_key=GEMINI_KEY)
         ai_available = True
-        print("[Gemini] google-generativeai 초기화 완료")
+        print("[Gemini] google-genai 초기화 완료")
     except Exception as e:
         print(f"[Gemini] 초기화 실패: {e}")
 
@@ -189,7 +188,7 @@ async def google_callback(code: str = "", state: str = "", error: str = ""):
         return RedirectResponse("/login?error=domain")
     token = _make_token(email)
     resp = RedirectResponse("/")
-    resp.set_cookie("session", token, httponly=True, max_age=86400 * 30, samesite="lax")
+    resp.set_cookie("session", token, httponly=True, max_age=86400 * 30, samesite="lax", secure=True)
     return resp
 
 @app.post("/api/logout")
@@ -238,10 +237,15 @@ async def analyze_image(file: UploadFile = File(...), email: str = Depends(_requ
 }}"""
 
     try:
-        import base64, json, re
-        b64 = base64.b64encode(img_bytes).decode()
-        # google-generativeai SDK
-        resp = gemini_client.generate_content([{"mime_type": mime, "data": b64}, prompt])
+        import re
+        from google.genai import types as _gt
+        resp = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[
+                _gt.Part.from_bytes(data=img_bytes, mime_type=mime),
+                _gt.Part.from_text(text=prompt),
+            ],
+        )
         text = resp.text
 
         m = re.search(r'\{.*\}', text, re.DOTALL)
