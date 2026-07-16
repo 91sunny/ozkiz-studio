@@ -132,9 +132,23 @@ async def _load_notion_cache():
     except Exception as e:
         print(f"[Notion] 캐시 오류: {e}")
 
+_admin_names: list = []
+
+def _load_admin_names():
+    global _admin_names
+    try:
+        import json as _json
+        p = pathlib.Path(__file__).parent / "static" / "admin_names.json"
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        _admin_names = data.get("names", [])
+        print(f"[Admin] 상품명 {len(_admin_names)}개 로딩")
+    except Exception as e:
+        print(f"[Admin] 로딩 실패: {e}")
+
 @app.on_event("startup")
 async def startup():
     import asyncio
+    _load_admin_names()
     asyncio.create_task(_load_notion_cache())
 
 # ─── 페이지 ───────────────────────────────────────────────────────────────────
@@ -217,20 +231,20 @@ async def analyze_image(file: UploadFile = File(...), email: str = Depends(_requ
     img_bytes = await file.read()
     mime = file.content_type or "image/jpeg"
     existing_names = [p["name"] for p in _notion_cache]
-
-    # 카테고리별로 고루 실제 상품명 예시 추출 (스타일 학습용)
-    clean = [n for n in existing_names if n and "-" in n and "(" not in n]
-    by_cat: dict = {}
-    for n in clean:
-        cat = n.split("-")[0]
-        by_cat.setdefault(cat, []).append(n)
-    picked = []
-    for cat_names in by_cat.values():
-        picked.extend(cat_names[:4])
-    examples_str = "오즈키즈 실제 상품명 예시 (이 스타일·어감으로 만드세요):\n" + " / ".join(picked[:40]) if picked else ""
-
     existing_lower = [n.replace(" ", "").lower() for n in existing_names]
     existing_str = ", ".join(existing_names[:300])
+
+    # 어드민 실제 상품명에서 카테고리별 예시 추출 (스타일 학습용)
+    src = _admin_names if _admin_names else existing_names
+    by_cat: dict = {}
+    for n in src:
+        if n and "-" in n and "(" not in n:
+            cat = n.split("-")[0]
+            by_cat.setdefault(cat, []).append(n)
+    picked = []
+    for cat_names in by_cat.values():
+        picked.extend(cat_names[:5])
+    examples_str = "오즈키즈 실제 상품명 예시 (이 스타일·어감으로 만드세요):\n" + " / ".join(picked[:60]) if picked else ""
 
     prompt = f"""이 아동복 샘플 사진을 분석해 JSON만 반환하세요 (다른 텍스트 없이).
 
