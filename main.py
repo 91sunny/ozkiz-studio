@@ -217,21 +217,39 @@ async def analyze_image(file: UploadFile = File(...), email: str = Depends(_requ
     img_bytes = await file.read()
     mime = file.content_type or "image/jpeg"
     existing_names = [p["name"] for p in _notion_cache]
-    existing_str = ", ".join(n for n in existing_names[:200] if n and "(" not in n)
+
+    # 카테고리별로 고루 실제 상품명 예시 추출 (스타일 학습용)
+    clean = [n for n in existing_names if n and "-" in n and "(" not in n]
+    by_cat: dict = {}
+    for n in clean:
+        cat = n.split("-")[0]
+        by_cat.setdefault(cat, []).append(n)
+    picked = []
+    for cat_names in by_cat.values():
+        picked.extend(cat_names[:4])
+    examples_str = "오즈키즈 실제 상품명 예시 (이 스타일·어감으로 만드세요):\n" + " / ".join(picked[:40]) if picked else ""
+
+    existing_lower = [n.replace(" ", "").lower() for n in existing_names]
+    existing_str = ", ".join(existing_names[:300])
 
     prompt = f"""이 아동복 샘플 사진을 분석해 JSON만 반환하세요 (다른 텍스트 없이).
 
-오즈키즈 상품명 규칙:
-- 형식: "[대분류]-[감성합성어]"  예) 하의-메리리본 / 상의-홀리프릴 / 아우터-캔디튤
-- 대분류: 상의/하의/아우터/원피스/슈즈/세트 중 하나
-- 감성합성어: 테마/감성어 + 소재·장식·실루엣 합성어 (색상 단어 금지)
-- 이미 사용 중인 상품명과 중복 금지
+{examples_str}
 
-사용 중인 상품명: {existing_str}
+=== 상품명 규칙 ===
+- 형식: "[대분류]-[감성합성어]"
+- 대분류: 상의 / 하의 / 아우터 / 원피스 / 슈즈 / 세트
+- 감성합성어: [테마/감성어]+[소재·장식·실루엣] 합성어
+  예) 메리리본 / 홀리프릴 / 캔디튤 / 리본팝 / 피크닉체크 / 봄봄플리츠
+- 색상 단어 금지, 두 글자 단독 금지
+- 아래 기존 상품명과 중복 금지
+
+=== 이미 사용 중인 상품명 (중복 금지) ===
+{existing_str}
 
 반환 형식:
 {{
-  "suggested_names": ["하의-메리리본","상의-홀리프릴","아우터-캔디튤","하의-루돌프벨","상의-트윙클리본"],
+  "suggested_names": ["하의-메리리본","하의-홀리프릴","하의-캔디튤","하의-트윙클리본","하의-루돌프벨"],
   "category": "하의",
   "description": "제품 특징 한국어 1문장"
 }}"""
@@ -253,6 +271,11 @@ async def analyze_image(file: UploadFile = File(...), email: str = Depends(_requ
         text = msg.content[0].text
         m = re.search(r'\{.*\}', text, re.DOTALL)
         result = json.loads(m.group()) if m else {"suggested_names": [], "category": "", "description": ""}
+        # 중복 필터링
+        result["suggested_names"] = [
+            n for n in result.get("suggested_names", [])
+            if n.replace(" ", "").lower() not in existing_lower
+        ]
         result["existing_count"] = len(existing_names)
         return result
     except Exception as e:
